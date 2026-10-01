@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: golos-v-tekst
+    runtime: static
+    buildCommand: node render-build.cjs
+    staticPublishPath: ./render-dist
+    autoDeployTrigger: commit
