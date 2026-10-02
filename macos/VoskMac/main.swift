@@ -192,9 +192,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func refreshDevices() {
-        devices = audioDevices(); devicePopup.removeAllItems()
+        devices = [(id: AudioDeviceID(0), name: "Системный микрофон Mac (по умолчанию)")] + audioDevices()
+        devicePopup.removeAllItems()
         for device in devices { devicePopup.addItem(withTitle: device.name) }
-        if devices.isEmpty { status.stringValue = "Микрофон не найден. Подключите микрофон и обновите список." }
+        devicePopup.selectItem(at: 0)
+        if devices.count == 1 { status.stringValue = "Используется системный микрофон Mac. Проверьте его в System Settings → Sound → Input." }
     }
 
     @objc private func refreshTargets() {
@@ -251,9 +253,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let input = engine.inputNode
             let device = devices[devicePopup.indexOfSelectedItem].id
-            var selected = device
-            guard let audioUnit = input.audioUnit else { throw NSError(domain: "VoskMac", code: 1, userInfo: [NSLocalizedDescriptionKey: "Не удалось открыть аудиоустройство."]) }
-            guard AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &selected, UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr else { throw NSError(domain: "VoskMac", code: 2, userInfo: [NSLocalizedDescriptionKey: "Не удалось выбрать микрофон."]) }
+            if device != 0, let audioUnit = input.audioUnit {
+                var selected = device
+                // If this input disappears or macOS refuses to switch to it,
+                // continue with the system-default microphone instead.
+                _ = AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &selected, UInt32(MemoryLayout<AudioDeviceID>.size))
+            }
             let format = input.outputFormat(forBus: 0)
             guard let converter = AVAudioConverter(from: format, to: AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!) else { throw NSError(domain: "VoskMac", code: 2, userInfo: [NSLocalizedDescriptionKey: "Не удалось подготовить микрофон для распознавания."]) }
             input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in

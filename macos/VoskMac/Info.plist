@@ -6,8 +6,8 @@
   <key>CFBundleIdentifier</key><string>com.antoniussergei.voskwordlistener</string>
   <key>CFBundleName</key><string>Vosk Word Listener</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.1.0</string>
-  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleShortVersionString</key><string>1.2.0</string>
+  <key>CFBundleVersion</key><string>3</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSMicrophoneUsageDescription</key><string>Vosk Word Listener uses your microphone for offline Russian dictation. Audio is not stored or sent anywhere.</string>
   <key>NSAppleEventsUsageDescription</key><string>Vosk Word Listener types recognized text into the app you are using.</string>
