@@ -235,18 +235,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func beginDictation() {
         guard !isListening, model != nil else { if model == nil { status.stringValue = "Сначала загрузите русскую модель Vosk." }; return }
         guard devicePopup.indexOfSelectedItem >= 0, devicePopup.indexOfSelectedItem < devices.count else { status.stringValue = "Выберите доступный микрофон."; return }
-        guard AXIsProcessTrusted() else {
-            let alert = NSAlert()
-            alert.messageText = "Разрешите ввод текста в другие приложения"
-            alert.informativeText = "Диктовка может распознавать речь, но для ввода текста в Word macOS требует разрешение Accessibility. Включите Vosk Word Listener в System Settings → Privacy & Security → Accessibility, затем закройте и снова откройте приложение."
-            alert.addButton(withTitle: "Открыть настройки")
-            alert.addButton(withTitle: "Отмена")
-            if alert.runModal() == .alertFirstButtonReturn,
-               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
-            return
-        }
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -326,7 +314,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyEdit(from oldText: String, to newText: String) {
         guard oldText != newText else { return }
         guard AXIsProcessTrusted() else {
-            status.stringValue = "Для ввода в другие приложения включите Accessibility в System Settings → Privacy & Security."
+            status.stringValue = "Речь распознана, но macOS не разрешила ввод текста. Проверьте Accessibility для этой копии приложения в System Settings → Privacy & Security; если переключатель уже включён, удалите старую запись и добавьте эту копию заново."
             return
         }
         var common = 0
