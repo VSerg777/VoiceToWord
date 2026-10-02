@@ -13,10 +13,14 @@ execFileSync(process.execPath, [path.join(__dirname, 'prepare-vosk-model.cjs'), 
 for (const filename of ['index.html', 'style.css', 'HELP-RU.txt']) {
   fs.copyFileSync(path.join(source, filename), path.join(output, filename));
 }
+fs.copyFileSync(path.join(__dirname, 'macos', 'VoskMac', 'README-RU.md'), path.join(output, 'INSTRUCTIONS-MAC-RU.md'));
 const original = fs.readFileSync(path.join(source, 'app.js'), 'utf8');
 const start = original.indexOf('const downloadButton =');
 if (start < 0) throw new Error('Download button initialization missing');
+const macStart = original.indexOf('const macDownloadButton =', start);
+if (macStart < 0) throw new Error('Mac download handler missing');
 const direct = `const downloadButton = document.getElementById('download-app');\n` +
   `downloadButton.addEventListener('click', () => { window.location.assign(${JSON.stringify(releaseUrl)}); });\n`;
-fs.writeFileSync(path.join(output, 'app.js'), original.slice(0, start) + direct);
+const macHandlers = original.slice(macStart);
+fs.writeFileSync(path.join(output, 'app.js'), original.slice(0, start) + direct + macHandlers);
 console.log('Render site ready: interactive examples and direct GitHub release download.');

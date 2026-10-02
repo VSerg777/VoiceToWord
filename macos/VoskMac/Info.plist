@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>VoskWordListener</string>
+  <key>CFBundleIdentifier</key><string>com.antoniussergei.voskwordlistener</string>
+  <key>CFBundleName</key><string>Vosk Word Listener</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>NSMicrophoneUsageDescription</key><string>Vosk Word Listener uses your microphone for offline Russian dictation. Audio is not stored or sent anywhere.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Vosk Word Listener types recognized text into the app you are using.</string>
+</dict>
+</plist>
