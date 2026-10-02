@@ -26,6 +26,24 @@ for (const button of document.querySelectorAll('[data-example]')) {
   const updateCount = () => { count.textContent = `${used} / 100 слов`; };
   let used = 0, finalized = '', interimText = '', model = null, modelLoading = null, recognizer = null;
   let stream = null, audioContext = null, source = null, processor = null, active = false, generation = 0;
+  const formatSpeech = (speech, previous = '') => {
+    const spoken = speech.trim();
+    if (!spoken) return '';
+    const literal = spoken.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').startsWith('буквально ');
+    let content = literal ? spoken.slice('буквально '.length) : spoken.replace(
+      /(?<!\p{L})(?:вопросительный знак|восклицательный знак|точка с запятой|новый абзац|новая строка|двоеточие|запятая|точка)(?!\p{L})/giu,
+      word => ({ 'запятая': ',', 'точка': '.', 'вопросительный знак': '?', 'восклицательный знак': '!', 'двоеточие': ':', 'точка с запятой': ';', 'новая строка': '\n', 'новый абзац': '\n\n' })[word.toLocaleLowerCase('ru-RU')]
+    );
+    if (!literal) {
+      content = content.replace(/ +([,.;:!?])/gu, '$1').replace(/ *\n */gu, '\n');
+      content = content.replace(/([,.;:!?])(?=\p{L})/gu, '$1 ');
+      content = content.replace(/(^|[.!?]\s+|\n)(\p{L})/gu, (_, prefix, letter) => prefix + letter.toLocaleUpperCase('ru-RU'));
+      if ((!previous.trim() || /[.!?]\s*$|\n\s*$/u.test(previous)) && /^\p{L}/u.test(content))
+        content = content.replace(/^\p{L}/u, letter => letter.toLocaleUpperCase('ru-RU'));
+    }
+    const needsSpace = previous.length > 0 && !/\s$/u.test(previous) && !/^[,.;:!?\n]/u.test(content);
+    return (needsSpace ? ' ' : '') + content;
+  };
   const setActive = value => { active = value; start.disabled = value || used >= 100; stop.disabled = !value; clear.disabled = value; };
   const cleanup = () => {
     if (processor) { processor.onaudioprocess = null; try { processor.disconnect(); } catch {} processor = null; }
@@ -37,7 +55,7 @@ for (const button of document.querySelectorAll('[data-example]')) {
   const stopTrial = (message, keepPartial = false) => {
     if (keepPartial && interimText) {
       const accepted = interimText.trim().split(/\s+/u).filter(Boolean).slice(0, Math.max(0, 100 - used));
-      if (accepted.length) { finalized += (finalized ? ' ' : '') + accepted.join(' '); used += accepted.length; updateCount(); }
+      if (accepted.length) { finalized += formatSpeech(accepted.join(' '), finalized); used += accepted.length; updateCount(); }
     }
     interimText = ''; generation++; cleanup(); setActive(false); text.value = finalized.trim(); status.textContent = message;
   };
@@ -73,9 +91,8 @@ for (const button of document.querySelectorAll('[data-example]')) {
       finalized = text.value.trim(); if (finalized) finalized += ' ';
       interimText = '';
       const render = interim => {
-        const words = finalized.trim().split(/\s+/u).filter(Boolean).slice(0, 100);
-        const pending = interim.trim().split(/\s+/u).filter(Boolean).slice(0, Math.max(0, 100 - used));
-        text.value = [words.join(' '), pending.join(' ')].filter(Boolean).join(' ');
+        const pending = interim.trim().split(/\s+/u).filter(Boolean).slice(0, Math.max(0, 100 - used)).join(' ');
+        text.value = finalized + formatSpeech(pending, finalized);
       };
       recognizer.on('result', event => {
         if (run !== generation) return;
@@ -85,7 +102,7 @@ for (const button of document.querySelectorAll('[data-example]')) {
         const accepted = phrase.split(/\s+/u).slice(0, Math.max(0, 100 - used));
         if (!accepted.length) return;
         used += accepted.length; updateCount();
-        finalized += (finalized ? ' ' : '') + accepted.join(' '); render('');
+        finalized += formatSpeech(accepted.join(' '), finalized); render('');
         if (used >= 100) stopTrial('Лимит 100 слов достигнут. Можно скопировать или отредактировать текст.');
       });
       recognizer.on('partialresult', event => {
