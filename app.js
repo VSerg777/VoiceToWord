@@ -24,7 +24,7 @@ for (const button of document.querySelectorAll('[data-example]')) {
   if (!text) return;
   const wordCount = value => (value.trim().match(/\S+/gu) || []).length;
   const updateCount = () => { count.textContent = `${used} / 100 слов`; };
-  let used = 0, finalized = '', model = null, modelLoading = null, recognizer = null;
+  let used = 0, finalized = '', interimText = '', model = null, modelLoading = null, recognizer = null;
   let stream = null, audioContext = null, source = null, processor = null, active = false, generation = 0;
   const setActive = value => { active = value; start.disabled = value || used >= 100; stop.disabled = !value; clear.disabled = value; };
   const cleanup = () => {
@@ -34,13 +34,28 @@ for (const button of document.querySelectorAll('[data-example]')) {
     if (audioContext) { const context = audioContext; audioContext = null; context.close().catch(() => {}); }
     if (recognizer) { try { recognizer.remove(); } catch {} recognizer = null; }
   };
-  const stopTrial = message => { generation++; cleanup(); setActive(false); text.value = finalized; status.textContent = message; };
+  const stopTrial = (message, keepPartial = false) => {
+    if (keepPartial && interimText) {
+      const accepted = interimText.trim().split(/\s+/u).filter(Boolean).slice(0, Math.max(0, 100 - used));
+      if (accepted.length) { finalized += (finalized ? ' ' : '') + accepted.join(' '); used += accepted.length; updateCount(); }
+    }
+    interimText = ''; generation++; cleanup(); setActive(false); text.value = finalized.trim(); status.textContent = message;
+  };
   const loadModel = () => {
     if (model) return Promise.resolve(model);
     if (!window.Vosk) return Promise.reject(new Error('Не удалось загрузить Vosk WebAssembly. Обновите страницу и попробуйте снова.'));
     if (!modelLoading) {
-      modelLoading = window.Vosk.createModel('vosk-model-small-ru-0.22.tar.gz');
-      modelLoading.then(value => { model = value; }).catch(() => { modelLoading = null; });
+      modelLoading = new Promise((resolve, reject) => {
+        const instance = new window.Vosk.Model('vosk-model-small-ru-0.22.tar.gz', -1);
+        const timeout = setTimeout(() => reject(new Error('Загрузка модели Vosk не завершилась. Проверьте соединение и обновите страницу.')), 180000);
+        instance.on('load', event => {
+          clearTimeout(timeout);
+          if (event.result) { model = instance; resolve(instance); }
+          else reject(new Error('Не удалось загрузить русскую модель Vosk. Обновите страницу и попробуйте ещё раз.'));
+        });
+        instance.on('error', event => { clearTimeout(timeout); reject(new Error(event.error || 'Ошибка при загрузке модели Vosk.')); });
+      });
+      modelLoading.catch(() => { modelLoading = null; });
     }
     return modelLoading;
   };
@@ -54,8 +69,9 @@ for (const button of document.querySelectorAll('[data-example]')) {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }, video: false });
       if (run !== generation) { stream.getTracks().forEach(track => track.stop()); stream = null; return; }
       audioContext = new AudioContext(); await audioContext.resume();
-      recognizer = new loaded.KaldiRecognizer();
+      recognizer = new loaded.KaldiRecognizer(audioContext.sampleRate);
       finalized = text.value.trim(); if (finalized) finalized += ' ';
+      interimText = '';
       const render = interim => {
         const words = finalized.trim().split(/\s+/u).filter(Boolean).slice(0, 100);
         const pending = interim.trim().split(/\s+/u).filter(Boolean).slice(0, Math.max(0, 100 - used));
@@ -64,6 +80,7 @@ for (const button of document.querySelectorAll('[data-example]')) {
       recognizer.on('result', event => {
         if (run !== generation) return;
         const phrase = event.result?.text?.trim();
+        interimText = '';
         if (!phrase) return;
         const accepted = phrase.split(/\s+/u).slice(0, Math.max(0, 100 - used));
         if (!accepted.length) return;
@@ -71,10 +88,22 @@ for (const button of document.querySelectorAll('[data-example]')) {
         finalized += (finalized ? ' ' : '') + accepted.join(' '); render('');
         if (used >= 100) stopTrial('Лимит 100 слов достигнут. Можно скопировать или отредактировать текст.');
       });
-      recognizer.on('partialresult', event => { if (run === generation) render(event.result?.partial || ''); });
+      recognizer.on('partialresult', event => {
+        if (run !== generation) return;
+        interimText = event.result?.partial || '';
+        render(interimText);
+      });
+      recognizer.on('error', event => { if (run === generation) stopTrial(event.error || 'Ошибка распознавания Vosk.'); });
       source = audioContext.createMediaStreamSource(stream);
       processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = event => { if (run === generation && recognizer) recognizer.acceptWaveform(event.inputBuffer); };
+      let audioChunks = 0;
+      processor.onaudioprocess = event => {
+        if (run !== generation || !recognizer) return;
+        try {
+          recognizer.acceptWaveform(event.inputBuffer);
+          if (++audioChunks === 1) status.textContent = 'Микрофон работает. Распознаю речь…';
+        } catch (error) { stopTrial(error?.message || 'Ошибка обработки звука.'); }
+      };
       source.connect(processor); processor.connect(audioContext.destination);
       status.textContent = 'Слушаю… Говорите по-русски. Аудио обрабатывается на этом устройстве.';
     } catch (error) {
@@ -82,7 +111,7 @@ for (const button of document.querySelectorAll('[data-example]')) {
       stopTrial(error?.name === 'NotAllowedError' ? 'Нет доступа к микрофону. Разрешите его в настройках браузера.' : (error?.message || 'Не удалось запустить Vosk. Обновите страницу и попробуйте снова.'));
     }
   });
-  stop.addEventListener('click', () => stopTrial('Диктовка остановлена.'));
+  stop.addEventListener('click', () => stopTrial('Диктовка остановлена.', true));
   clear.addEventListener('click', () => { text.value = ''; finalized = ''; used = 0; updateCount(); start.disabled = false; status.textContent = 'Нажмите «Начать диктовку», чтобы попробовать снова.'; });
   text.addEventListener('input', () => {
     if (active) return;
