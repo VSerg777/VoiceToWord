@@ -1,6 +1,7 @@
 // Builds a small Render site with a direct GitHub Releases download.
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const releaseUrl = process.env.APP_DOWNLOAD_URL;
 if (!releaseUrl || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//.test(releaseUrl)) {
   throw new Error('Set APP_DOWNLOAD_URL to the published GitHub Releases ZIP URL before deployment.');
@@ -8,6 +9,7 @@ if (!releaseUrl || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//
 const output = path.join(__dirname, 'render-dist');
 const source = fs.existsSync(path.join(__dirname, 'dist', 'index.html')) ? path.join(__dirname, 'dist') : __dirname;
 fs.mkdirSync(output, { recursive: true });
+execFileSync(process.execPath, [path.join(__dirname, 'prepare-vosk-model.cjs'), output], { stdio: 'inherit' });
 for (const filename of ['index.html', 'style.css', 'HELP-RU.txt']) {
   fs.copyFileSync(path.join(source, filename), path.join(output, filename));
 }
