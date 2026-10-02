@@ -95,6 +95,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var modelField: NSTextField!
     private var devicePopup: NSPopUpButton!
+    private var targetPopup: NSPopUpButton!
     private var status: NSTextField!
     private var transcriptView: NSTextView!
     private var startButton: NSButton!
@@ -104,6 +105,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recognizer: OpaquePointer?
     private let dictation = DictationEngine()
     private var devices: [(id: AudioDeviceID, name: String)] = []
+    private var targetProcessIDs: [pid_t] = []
     private var partial = ""
     private var isListening = false
     private var monitor: Any?
@@ -112,6 +114,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildWindow()
         refreshDevices()
+        refreshTargets()
         monitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.modifierFlags.contains([.control, .option]), event.charactersIgnoringModifiers?.lowercased() == "d" else { return }
             Task { @MainActor in self?.toggleDictation() }
@@ -131,7 +134,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func buildWindow() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 510), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 550), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Vosk Word Listener for Mac"
         window.center()
         let root = NSStackView(); root.orientation = .vertical; root.alignment = .leading; root.spacing = 12; root.translatesAutoresizingMaskIntoConstraints = false
@@ -143,6 +146,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         devicePopup = NSPopUpButton(frame: .zero, pullsDown: false)
         let refresh = NSButton(title: "Обновить микрофоны", target: self, action: #selector(refreshDevices)); refresh.bezelStyle = .rounded
         let deviceRow = NSStackView(views: [devicePopup, refresh]); deviceRow.orientation = .horizontal; deviceRow.spacing = 8
+        targetPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        targetPopup.target = self; targetPopup.action = #selector(targetChanged)
+        let refreshTargetsButton = NSButton(title: "Обновить приложения", target: self, action: #selector(refreshTargets)); refreshTargetsButton.bezelStyle = .rounded
+        let targetLabel = NSTextField(labelWithString: "Куда вставлять текст:")
+        let targetRow = NSStackView(views: [targetLabel, targetPopup, refreshTargetsButton]); targetRow.orientation = .horizontal; targetRow.spacing = 8
         let buttonRow = NSStackView(); buttonRow.orientation = .horizontal; buttonRow.spacing = 8
         startButton = NSButton(title: "Диктовать  (⌃⌥D)", target: self, action: #selector(startDictation)); startButton.bezelStyle = .rounded
         stopButton = NSButton(title: "Остановить", target: self, action: #selector(stopDictation)); stopButton.bezelStyle = .rounded; stopButton.isEnabled = false
@@ -151,12 +159,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         status = NSTextField(labelWithString: "Выберите папку русской модели Vosk и нажмите «Загрузить»."); status.lineBreakMode = .byWordWrapping
         transcriptView = NSTextView(); transcriptView.isEditable = false; transcriptView.font = .systemFont(ofSize: 15); transcriptView.textContainerInset = NSSize(width: 8, height: 8)
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.documentView = transcriptView; scroll.translatesAutoresizingMaskIntoConstraints = false
-        for view in [modelRow, deviceRow, buttonRow] { view.translatesAutoresizingMaskIntoConstraints = false; root.addArrangedSubview(view) }
+        for view in [modelRow, deviceRow, targetRow, buttonRow] { view.translatesAutoresizingMaskIntoConstraints = false; root.addArrangedSubview(view) }
         root.addArrangedSubview(status); root.addArrangedSubview(scroll)
         window.contentView?.addSubview(root)
         NSLayoutConstraint.activate([
             root.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 18), root.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor, constant: -18), root.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 18), root.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor, constant: -18),
-            modelRow.widthAnchor.constraint(equalTo: root.widthAnchor), deviceRow.widthAnchor.constraint(equalTo: root.widthAnchor), buttonRow.widthAnchor.constraint(equalTo: root.widthAnchor), scroll.widthAnchor.constraint(equalTo: root.widthAnchor), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 250), modelField.widthAnchor.constraint(greaterThanOrEqualToConstant: 280)
+            modelRow.widthAnchor.constraint(equalTo: root.widthAnchor), deviceRow.widthAnchor.constraint(equalTo: root.widthAnchor), targetRow.widthAnchor.constraint(equalTo: root.widthAnchor), buttonRow.widthAnchor.constraint(equalTo: root.widthAnchor), scroll.widthAnchor.constraint(equalTo: root.widthAnchor), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 250), modelField.widthAnchor.constraint(greaterThanOrEqualToConstant: 280), targetPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 280)
         ])
         if let saved = UserDefaults.standard.string(forKey: "modelPath") { modelField.stringValue = saved }
         window.makeKeyAndOrderFront(nil)
@@ -187,6 +195,38 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         devices = audioDevices(); devicePopup.removeAllItems()
         for device in devices { devicePopup.addItem(withTitle: device.name) }
         if devices.isEmpty { status.stringValue = "Микрофон не найден. Подключите микрофон и обновите список." }
+    }
+
+    @objc private func refreshTargets() {
+        targetPopup.removeAllItems()
+        targetProcessIDs = [0]
+        targetPopup.addItem(withTitle: "Активное поле (переключитесь после старта)")
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && $0.activationPolicy == .regular && $0.localizedName != nil }
+            .sorted { ($0.localizedName ?? "").localizedCaseInsensitiveCompare($1.localizedName ?? "") == .orderedAscending }
+        for app in apps {
+            targetPopup.addItem(withTitle: app.localizedName ?? "Приложение")
+            targetProcessIDs.append(app.processIdentifier)
+        }
+        let savedPID = UserDefaults.standard.integer(forKey: "targetProcessID")
+        let restore = targetProcessIDs.firstIndex(of: pid_t(savedPID)) ?? 0
+        targetPopup.selectItem(at: restore)
+        updateTargetStatus()
+    }
+
+    @objc private func targetChanged() {
+        guard targetPopup.indexOfSelectedItem >= 0, targetPopup.indexOfSelectedItem < targetProcessIDs.count else { return }
+        UserDefaults.standard.set(Int(targetProcessIDs[targetPopup.indexOfSelectedItem]), forKey: "targetProcessID")
+        updateTargetStatus()
+    }
+
+    private func updateTargetStatus() {
+        guard targetPopup != nil, !isListening else { return }
+        if targetPopup.indexOfSelectedItem == 0 {
+            status.stringValue = "Куда вставлять: активное поле. После старта переключитесь в нужное приложение и поставьте курсор."
+        } else {
+            status.stringValue = "Куда вставлять: \(targetPopup.titleOfSelectedItem ?? "выбранное приложение"). Поставьте курсор в нужное поле этого приложения."
+        }
     }
 
     @objc private func startDictation() { beginDictation() }
@@ -238,7 +278,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             try engine.start()
             isListening = true; dictation.clear(); partial = ""; transcriptView.string = ""
-            startButton.isEnabled = false; stopButton.isEnabled = true; status.stringValue = "Слушаю. Говорите по-русски. ⌃⌥D — остановить."
+            startButton.isEnabled = false; stopButton.isEnabled = true
+            let destination = targetPopup.indexOfSelectedItem == 0 ? "активное приложение" : (targetPopup.titleOfSelectedItem ?? "выбранное приложение")
+            status.stringValue = "Слушаю. Вставляю в: \(destination). Говорите по-русски. ⌃⌥D — остановить."
         } catch {
             engine.inputNode.removeTap(onBus: 0); self.audioEngine = nil; vosk_recognizer_free(recognizer); self.recognizer = nil; status.stringValue = "Ошибка аудио: \(error.localizedDescription)"
         }
@@ -271,10 +313,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         while common < old.count && common < new.count && old[common] == new[common] { common += 1 }
         let removed = String(decoding: old.dropFirst(common), as: UTF16.self)
         var added = String(decoding: new.dropFirst(common), as: UTF16.self)
-        let cursorPosition = AXUIElementCreateSystemWide()
+        let targetPID = targetProcessIDs.indices.contains(targetPopup.indexOfSelectedItem) ? targetProcessIDs[targetPopup.indexOfSelectedItem] : 0
+        let cursorPosition = targetPID == 0 ? AXUIElementCreateSystemWide() : AXUIElementCreateApplication(targetPID)
         var focusedValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(cursorPosition, kAXFocusedUIElementAttribute as CFString, &focusedValue) == .success,
-              let focused = focusedValue as! AXUIElement? else { return }
+              let focused = focusedValue as! AXUIElement? else {
+            status.stringValue = targetPID == 0 ? "Не найдено активное поле ввода. Переключитесь в нужное приложение и поставьте курсор." : "В выбранном приложении нет активного поля ввода. Откройте его и поставьте курсор в текстовое поле."
+            return
+        }
         var selectedValue: CFTypeRef?
         if AXUIElementCopyAttributeValue(focused, kAXSelectedTextRangeAttribute as CFString, &selectedValue) == .success,
            let value = selectedValue, CFGetTypeID(value) == AXValueGetTypeID() {
