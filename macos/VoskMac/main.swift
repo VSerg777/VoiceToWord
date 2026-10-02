@@ -286,6 +286,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             startButton.isEnabled = false; stopButton.isEnabled = true
             let destination = targetPopup.indexOfSelectedItem == 0 ? "активное приложение" : (targetPopup.titleOfSelectedItem ?? "выбранное приложение")
             status.stringValue = "Слушаю. Вставляю в: \(destination). Говорите по-русски. ⌃⌥D — остановить."
+            if targetPopup.indexOfSelectedItem > 0,
+               targetProcessIDs.indices.contains(targetPopup.indexOfSelectedItem),
+               let targetApp = NSRunningApplication(processIdentifier: targetProcessIDs[targetPopup.indexOfSelectedItem]) {
+                targetApp.activate(options: [.activateAllWindows])
+            }
         } catch {
             engine.inputNode.removeTap(onBus: 0); self.audioEngine = nil; vosk_recognizer_free(recognizer); self.recognizer = nil; status.stringValue = "Ошибка аудио: \(error.localizedDescription)"
         }
