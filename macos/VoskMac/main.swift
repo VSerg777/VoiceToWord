@@ -235,7 +235,18 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func beginDictation() {
         guard !isListening, model != nil else { if model == nil { status.stringValue = "Сначала загрузите русскую модель Vosk." }; return }
         guard devicePopup.indexOfSelectedItem >= 0, devicePopup.indexOfSelectedItem < devices.count else { status.stringValue = "Выберите доступный микрофон."; return }
-        if !AXIsProcessTrusted() { status.stringValue = "Чтобы печатать в другие приложения, включите Vosk Word Listener в System Settings → Privacy & Security → Accessibility. Разрешите микрофон при запросе." }
+        guard AXIsProcessTrusted() else {
+            let alert = NSAlert()
+            alert.messageText = "Разрешите ввод текста в другие приложения"
+            alert.informativeText = "Диктовка может распознавать речь, но для ввода текста в Word macOS требует разрешение Accessibility. Включите Vosk Word Listener в System Settings → Privacy & Security → Accessibility, затем закройте и снова откройте приложение."
+            alert.addButton(withTitle: "Открыть настройки")
+            alert.addButton(withTitle: "Отмена")
+            if alert.runModal() == .alertFirstButtonReturn,
+               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -363,9 +374,19 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func typeText(_ text: String) {
-        guard AXIsProcessTrusted(), let source = CGEventSource(stateID: .hidSystemState), let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true), let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { return }
-        down.keyboardSetUnicodeString(stringLength: text.utf16.count, unicodeString: Array(text.utf16)); down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        guard AXIsProcessTrusted(), let source = CGEventSource(stateID: .hidSystemState) else { return }
+        let units = Array(text.utf16)
+        var start = 0
+        while start < units.count {
+            var end = min(start + 20, units.count)
+            if end < units.count, (0xD800...0xDBFF).contains(units[end - 1]), (0xDC00...0xDFFF).contains(units[end]) { end -= 1 }
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { return }
+            down.keyboardSetUnicodeString(stringLength: end - start, unicodeString: Array(units[start..<end]))
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+            start = end
+        }
     }
 
     @objc private func stopDictation() {

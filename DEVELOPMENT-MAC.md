@@ -21,8 +21,9 @@ Apple silicon and Intel Macs running macOS 12 or later.
 The app is ad-hoc signed, not notarized with an Apple Developer ID. After
 unzipping, Control-click the app, choose **Open**, then confirm the macOS
 warning. Grant Microphone permission to recognize speech and Accessibility
-permission in System Settings → Privacy & Security to type in other apps. After
-allowing Accessibility, restart the app.
+permission in System Settings → Privacy & Security to type in other apps. The app checks Accessibility before starting dictation and opens System Settings
+when access is missing. After allowing Accessibility, restart the app. If an old
+permission entry remains, remove and re-add the app.
 
 Choose the extracted Vosk model folder containing `am/final.mdl`, select a
 microphone, and choose a destination app in **Куда вставлять текст**. Put the
