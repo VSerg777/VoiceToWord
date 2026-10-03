@@ -135,7 +135,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildWindow() {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 550), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Vosk Word Listener for Mac"
+        window.title = "Vosk Word Listener for Mac 1.4.1 (diagnostic build)"
         window.center()
         let root = NSStackView(); root.orientation = .vertical; root.alignment = .leading; root.spacing = 12; root.translatesAutoresizingMaskIntoConstraints = false
         let modelRow = NSStackView(); modelRow.orientation = .horizontal; modelRow.spacing = 8
@@ -238,7 +238,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             DispatchQueue.main.async {
                 guard let self else { return }
-                guard granted else { self.status.stringValue = "Нет доступа к микрофону. Разрешите его в System Settings → Privacy & Security → Microphone."; return }
+                guard granted else { self.status.stringValue = "Доступ к микрофону запрещён. Включите его для Vosk Word Listener в System Settings → Privacy & Security → Microphone, затем нажмите «Диктовать» ещё раз."; return }
                 self.startAudio()
             }
         }
@@ -284,7 +284,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             isListening = true; dictation.clear(); partial = ""; transcriptView.string = ""
             startButton.isEnabled = false; stopButton.isEnabled = true
             let destination = targetPopup.indexOfSelectedItem == 0 ? "активное приложение" : (targetPopup.titleOfSelectedItem ?? "выбранное приложение")
-            status.stringValue = "Слушаю. Вставляю в: \(destination). Говорите по-русски. ⌃⌥D — остановить."
+            status.stringValue = "Диктовка включена (1.4.1 diagnostic). Вставляю в: \(destination). Говорите по-русски. ⌃⌥D — остановить."
             if targetPopup.indexOfSelectedItem > 0,
                targetProcessIDs.indices.contains(targetPopup.indexOfSelectedItem),
                let targetApp = NSRunningApplication(processIdentifier: targetProcessIDs[targetPopup.indexOfSelectedItem]) {
